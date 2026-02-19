@@ -10,6 +10,7 @@ import {
   createEdits,
   toResolvedHtml,
   generateDummyDataFromTemplate,
+  getNodeIdContainingRange,
   type DummyData,
   type Edits,
   type NodePosition,
@@ -19,7 +20,7 @@ import { PreviewPane } from "@/components/PreviewPane";
 const CodeEditor = dynamic(() => import("@/components/CodeEditor").then((m) => ({ default: m.CodeEditor })), {
   ssr: false,
   loading: () => (
-    <div className="w-full rounded-lg border border-[var(--editor-border)] bg-[var(--panel-bg)] flex items-center justify-center text-[var(--text-muted)] text-sm" style={{ minHeight: "14rem" }}>
+    <div className="w-full h-full min-h-[24rem] rounded-lg border border-[var(--editor-border)] bg-[var(--panel-bg)] flex items-center justify-center text-[var(--text-muted)] text-sm">
       Loading editor…
     </div>
   ),
@@ -39,6 +40,7 @@ export default function Home() {
   const [output, setOutput] = useState<string | null>(null);
   const [paddingValue, setPaddingValue] = useState("");
   const [highlightFromCode, setHighlightFromCode] = useState<string | null>(null);
+  const [selectionRange, setSelectionRange] = useState<{ from: number; to: number } | null>(null);
 
   const parseResult = useMemo(
     () => parseWithPositions(template),
@@ -75,7 +77,7 @@ export default function Home() {
   const remainingNodeIds = useMemo(() => {
     return nodeList
       .filter((n) => !edits.removals.has(n.nodeId))
-      .sort((a, b) => a.nodeId - b.nodeId)
+      .sort((a, b) => a.startOffset - b.startOffset)
       .map((n) => n.nodeId);
   }, [nodeList, edits.removals]);
 
@@ -83,6 +85,19 @@ export default function Home() {
     (index: number) => remainingNodeIds[index] ?? -1,
     [remainingNodeIds]
   );
+
+  const nodeIdToPreviewIndex = useMemo(() => {
+    const m = new Map<number, number>();
+    remainingNodeIds.forEach((id, i) => m.set(id, i));
+    return m;
+  }, [remainingNodeIds]);
+
+  const highlightPreviewIndex = useMemo(() => {
+    if (selectionRange == null) return null;
+    const nodeId = getNodeIdContainingRange(nodeList, selectionRange.from, selectionRange.to);
+    if (nodeId == null) return null;
+    return nodeIdToPreviewIndex.get(nodeId) ?? null;
+  }, [selectionRange, nodeList, nodeIdToPreviewIndex]);
 
   const selectedNode = useMemo(
     () =>
@@ -118,23 +133,17 @@ export default function Home() {
     setSelectedNodeId(null);
   }, [selectedNodeId]);
 
-  const handleGetOutput = useCallback(
-    (mode: "template" | "resolved") => {
-      const modified = applyEdits(template, nodeList, edits);
-      if (mode === "template") {
-        setOutput(modified);
-      } else {
-        setOutput(toResolvedHtml(modified, dummyData));
-      }
-    },
-    [template, nodeList, edits, dummyData]
-  );
+  const handleGetTemplate = useCallback(() => {
+    const result = applyEdits(template, nodeList, edits);
+    setOutput(result);
+    // Output mirrors current template (with Inspector removals/padding applied); no trim/normalize.
+  }, [template, nodeList, edits]);
 
   const variableNames = useMemo(() => getVariableNames(template), [template]);
 
   return (
     <div className="min-h-screen p-4 md:p-6 max-w-[1600px] mx-auto">
-      <header className="mb-6">
+      <header className="mb-4">
         <h1 className="text-2xl font-bold text-[var(--text)]">
           Template Visualizer & Editor
         </h1>
@@ -143,24 +152,33 @@ export default function Home() {
         </p>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Left: Code + Dummy data */}
-        <div className="space-y-4 min-h-0">
-          <div>
-            <label className="block text-sm font-medium text-[var(--text-muted)] mb-1">
+        <div className="space-y-4 min-h-0 flex flex-col">
+          <div className="flex flex-col flex-1 min-h-0 h-[calc(100vh-7rem)]">
+            <label className="block text-sm font-medium text-[var(--text-muted)] mb-1 shrink-0">
               Template code
             </label>
-            <CodeEditor
-              value={template}
-              onChange={setTemplate}
-              language="html"
-              height="14rem"
-              placeholder="HTML with {{variable}} or ${'${expr}'} placeholders..."
-              onSelectionChange={setHighlightFromCode}
-            />
+            <div className="flex-1 min-h-0 overflow-auto flex flex-col">
+              <CodeEditor
+                value={template}
+                onChange={setTemplate}
+                language="html"
+                height="100%"
+                placeholder="HTML with {{variable}} or ${'${expr}'} placeholders..."
+                onSelectionChange={setHighlightFromCode}
+                onSelectionRange={setSelectionRange}
+                className="flex-1 min-h-0 h-full"
+              highlightRange={
+                selectedNode
+                  ? { from: selectedNode.startOffset, to: selectedNode.endOffset }
+                  : null
+              }
+              />
+            </div>
             {variableNames.length > 0 && (
               <p className="text-xs text-[var(--text-muted)] mt-1">
-                Variables auto-filled with sample data: {variableNames.slice(0, 10).join(", ")}
+                All variables auto-filled with sample data: {variableNames.slice(0, 10).join(", ")}
                 {variableNames.length > 10 ? ` (+${variableNames.length - 10} more)` : ""}
               </p>
             )}
@@ -168,16 +186,17 @@ export default function Home() {
         </div>
 
         {/* Right: Preview + Inspector + Output */}
-        <div className="space-y-4">
-          <div>
+        <div className="space-y-4 flex flex-col min-h-0">
+          <div className="flex flex-col flex-1 min-h-[36rem]">
             <label className="block text-sm font-medium text-[var(--text-muted)] mb-1">
-              Preview (click element to inspect; select code on the left to show where it is)
+              Preview (click any element to highlight it in the code; select code on the left to show where it is — two-way sync)
             </label>
             <PreviewPane
               html={previewHtml}
               selectedNodeId={selectedNodeId}
               onSelectNode={setSelectedNodeId}
               indexToNodeId={indexToNodeId}
+              highlightPreviewIndex={highlightPreviewIndex}
               highlightFromCode={highlightFromCode}
             />
           </div>
@@ -231,21 +250,14 @@ export default function Home() {
             <div className="flex flex-wrap gap-2 mb-2">
               <button
                 type="button"
-                onClick={() => handleGetOutput("template")}
+                onClick={handleGetTemplate}
                 className="rounded bg-[var(--accent)] text-white px-3 py-1.5 text-sm hover:bg-[var(--accent-hover)]"
               >
                 Get template
               </button>
-              <button
-                type="button"
-                onClick={() => handleGetOutput("resolved")}
-                className="rounded border border-[var(--editor-border)] text-[var(--text)] px-3 py-1.5 text-sm hover:bg-[var(--editor-border)]"
-              >
-                Get resolved HTML
-              </button>
             </div>
             <p className="text-xs text-[var(--text-muted)] mb-1">
-              Template = FreeMarker + variables preserved. Resolved = variables filled, {"<#list>"} / {"<#if>"} stripped (clean HTML).
+              Mirrors your current template (including any text you add or delete). Inspector “Remove” and “Apply padding” are applied. Spaces preserved.
             </p>
             {output !== null ? (
               <div className="relative">
@@ -253,7 +265,7 @@ export default function Home() {
                   value={output}
                   onChange={() => {}}
                   language="html"
-                  height="10rem"
+                  height="16rem"
                   readOnly
                 />
                 <button
@@ -266,7 +278,7 @@ export default function Home() {
               </div>
             ) : (
               <div className="w-full h-24 rounded-lg border border-dashed border-[var(--editor-border)] flex items-center justify-center text-[var(--text-muted)] text-sm">
-                Click “Get template” or “Get resolved HTML” above.
+                Click “Get template” above.
               </div>
             )}
           </div>

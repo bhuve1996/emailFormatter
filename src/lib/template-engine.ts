@@ -2,6 +2,13 @@
  * Template engine: substitute variables, parse with source positions,
  * apply edits without disturbing formatting.
  * Supports {{name}} and ${expression} (e.g. FreeMarker-style dotted paths).
+ *
+ * WHITESPACE / EMAIL SAFETY: We never trim or normalize spaces in the template or output.
+ * - Spacing between tags (e.g. newlines or spaces between </div> and <span>) is never stripped or collapsed.
+ * - substituteVariables: only replaces {{key}} and ${expr} with values; all other characters (spaces, newlines, indentation) are preserved.
+ * - stripFreeMarkerDirectives: only removes <#...> and </#...> tags; text and spaces outside them (including between any tags) are unchanged.
+ * - applyEdits: only uses slice + insert (removals and style injection); no trim or replace on the rest of the string.
+ * Outputted code has the same spaces and line breaks as the source except where the user explicitly removed content or we injected a style attribute.
  */
 
 import { parseFragment, serialize } from "parse5";
@@ -24,7 +31,11 @@ function getByPath(data: Record<string, unknown>, path: string): unknown {
   return current;
 }
 
-/** Substitute {{variable}} and ${expression} with values from dummy data. */
+/**
+ * Substitute {{variable}} and ${expression} with values from dummy data.
+ * Preserves all whitespace: only the matched placeholder is replaced; surrounding spaces/newlines
+ * and spacing between tags are never touched or stripped.
+ */
 export function substituteVariables(
   template: string,
   dummyData: DummyData
@@ -58,15 +69,19 @@ export function getVariableNames(template: string): string[] {
   return names;
 }
 
-/** Pick a sensible sample value for a variable key (last segment of path or simple name). */
+/** Pick a sensible sample value for a variable key (last segment of path or simple name). Any variable in the template gets a value; unknown keys use "Sample". */
 function sampleValueForKey(key: string): string | number {
   const k = key.toLowerCase();
   if (k === "quantity" || k === "count") return 2;
   if (k === "totalincludingtax" || k === "amount" || k === "price" || k === "total") return "99.00";
   if (k === "reference" || k === "id" || k === "sku") return "SKU123";
   if (k === "labelreference" || k === "label" || k === "name" || k === "title") return "Sample Product";
-  if (k === "orderid") return "#12345";
+  if (k === "orderid" || k === "order_id") return "#12345";
   if (k === "footer") return "Thank you.";
+  if (k === "email" || k === "mail") return "user@example.com";
+  if (k === "date" || k === "datetime") return "2025-01-15";
+  if (k === "currency" || k === "code") return "GBP";
+  if (k === "description" || k === "body" || k === "text") return "Sample text.";
   return "Sample";
 }
 
@@ -97,11 +112,15 @@ export function generateDummyDataFromTemplate(template: string): DummyData {
   return data as DummyData;
 }
 
-/** Strip ALL FreeMarker directive tags so output has no conditions—only layout + dummy text. */
+/**
+ * Strip ALL FreeMarker directive tags so output has no conditions—only layout + dummy text.
+ * Only the directive tags themselves are removed; all other characters are preserved, including:
+ * - Spaces and newlines between tags (e.g. between </div> and <#if>, or between any > and <).
+ * - Indentation and line breaks anywhere in the template.
+ */
 export function stripFreeMarkerDirectives(html: string): string {
   let out = html;
   let prev = "";
-  // Directive name after # is word chars (list, if, else, assign, ...). Strip until no match.
   while (prev !== out) {
     prev = out;
     out = out.replace(/<#\w[\s\S]*?>/g, "");
@@ -123,6 +142,25 @@ export interface NodePosition {
   /** End offset of the opening tag (before '>') for injecting style. */
   startTagEndOffset: number;
   tagName: string;
+}
+
+/**
+ * Find the template node that best contains the given character range [from, to].
+ * Returns the smallest node that fully contains the range (innermost element), or null.
+ */
+export function getNodeIdContainingRange(
+  nodeList: NodePosition[],
+  from: number,
+  to: number
+): number | null {
+  const containing = nodeList.filter(
+    (n) => n.startOffset <= from && n.endOffset >= to
+  );
+  if (containing.length === 0) return null;
+  const smallest = containing.reduce((a, b) =>
+    a.endOffset - a.startOffset <= b.endOffset - b.startOffset ? a : b
+  );
+  return smallest.nodeId;
 }
 
 export interface ParseResult {
@@ -179,13 +217,15 @@ export function parseWithPositions(html: string): ParseResult | null {
   }
 }
 
-/** Mutate fragment in place: add data-node-id to each element, then serialize. */
+/** Mutate fragment in place: add data-node-id and data-tag-name to each element, then serialize. */
 function serializeWithNodeIds(fragment: ReturnType<typeof parseFragment>): string {
   let id = 0;
   function walk(node: any): void {
     if (node?.nodeName === "#element") {
       if (!node.attrs) node.attrs = [];
       node.attrs.push({ name: "data-node-id", value: String(id++) });
+      const tag = (node.tagName || "").toLowerCase();
+      if (tag) node.attrs.push({ name: "data-tag-name", value: tag });
     }
     for (const c of node?.childNodes || []) walk(c);
   }
@@ -194,7 +234,10 @@ function serializeWithNodeIds(fragment: ReturnType<typeof parseFragment>): strin
   return serialize(fragment as any);
 }
 
-/** Build HTML for preview: substitute variables and add data-node-id to elements. */
+/**
+ * Build HTML for preview only (iframe). Uses parse5 serialize, which may normalize whitespace.
+ * Do not use this for user-facing output—use applyEdits for "Get template" so spacing is preserved.
+ */
 export function buildPreviewHtml(
   template: string,
   dummyData: DummyData,
@@ -222,6 +265,8 @@ export function createEdits(): Edits {
 /**
  * Apply edits to the original template string. Removals and style injections
  * are done with minimal string changes to preserve formatting and spacing.
+ * Only uses slice + insert; never trims or normalizes. All spaces/newlines and spacing
+ * between tags remain exactly as in originalTemplate except at removal or injection points.
  */
 export function applyEdits(
   originalTemplate: string,

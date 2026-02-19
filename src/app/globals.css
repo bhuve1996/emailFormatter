@@ -22,3 +22,9 @@ body {
   background: #fff;
   min-height: 200px;
 }
+
+/* Highlight in template editor when user selects an element in the preview */
+.cm-highlight-from-preview {
+  background: rgba(99, 102, 241, 0.35);
+  border-radius: 2px;
+}
