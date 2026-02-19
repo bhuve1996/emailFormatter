@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --editor-bg: #0f0f12;
+  --editor-border: #2a2a32;
+  --panel-bg: #18181c;
+  --accent: #6366f1;
+  --accent-hover: #818cf8;
+  --text: #e4e4e7;
+  --text-muted: #71717a;
+}
+
+body {
+  background: var(--editor-bg);
+  color: var(--text);
+}
+
+/* Preview iframe base */
+.preview-frame {
+  background: #fff;
+  min-height: 200px;
+}
