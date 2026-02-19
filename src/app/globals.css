@@ -2,7 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+/* Dark theme (default) */
+:root,
+[data-theme="dark"] {
   --editor-bg: #0f0f12;
   --editor-border: #2a2a32;
   --panel-bg: #18181c;
@@ -12,15 +14,28 @@
   --text-muted: #71717a;
 }
 
+/* Light theme */
+[data-theme="light"] {
+  --editor-bg: #f4f4f5;
+  --editor-border: #e4e4e7;
+  --panel-bg: #ffffff;
+  --accent: #4f46e5;
+  --accent-hover: #6366f1;
+  --text: #18181b;
+  --text-muted: #71717a;
+}
+
 body {
   background: var(--editor-bg);
   color: var(--text);
 }
 
-/* Preview iframe base */
+/* Preview iframe base — fixed height so content scrolls inside */
 .preview-frame {
   background: #fff;
   min-height: 200px;
+  display: block;
+  overflow: auto;
 }
 
 /* Highlight in template editor when user selects an element in the preview */

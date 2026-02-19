@@ -37,6 +37,8 @@ interface CodeEditorProps {
   readOnly?: boolean;
   placeholder?: string;
   className?: string;
+  /** "dark" uses oneDark theme; "light" uses default light editor. */
+  theme?: "light" | "dark";
   /** When selection changes in the editor, call with the selected text (for syncing to preview). */
   onSelectionChange?: (selectedText: string) => void;
   /** When selection changes, call with the character range { from, to } for node-based preview sync. */
@@ -53,6 +55,7 @@ export function CodeEditor({
   readOnly = false,
   placeholder,
   className = "",
+  theme = "dark",
   onSelectionChange,
   onSelectionRange,
   highlightRange = null,
@@ -126,14 +129,14 @@ export function CodeEditor({
       className={`rounded-lg border border-[var(--editor-border)] bg-[var(--panel-bg)] ${className}`}
       style={
         isFillHeight
-          ? { height: "100%", minHeight: 0, overflow: "auto" }
+          ? { height: "100%", minHeight: 0, overflow: "hidden" }
           : { minHeight: height, overflow: "hidden" }
       }
     >
       <CodeMirror
         value={value}
         height={isFillHeight ? "100%" : height}
-        theme={oneDark}
+        theme={theme === "dark" ? oneDark : undefined}
         extensions={extensions}
         onChange={readOnly ? undefined : onChange}
         readOnly={readOnly}

@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
+import { useTheme } from "@/contexts/ThemeContext";
 import {
   getVariableNames,
   parseWithPositions,
@@ -141,34 +142,47 @@ export default function Home() {
 
   const variableNames = useMemo(() => getVariableNames(template), [template]);
 
+  const { theme, toggleTheme } = useTheme();
+
   return (
     <div className="min-h-screen p-4 md:p-6 max-w-[1600px] mx-auto">
-      <header className="mb-4">
-        <h1 className="text-2xl font-bold text-[var(--text)]">
-          Template Visualizer & Editor
-        </h1>
-        <p className="text-[var(--text-muted)] text-sm mt-1">
-          Paste template with {"{{variables}}"} or ${"${path}"}. Preview and resolved output use auto-generated sample data—no config needed.
-        </p>
+      <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--text)]">
+            Template Visualizer & Editor
+          </h1>
+          <p className="text-[var(--text-muted)] text-sm mt-1">
+            Paste template with {"{{variables}}"} or ${"${path}"}. Preview and resolved output use auto-generated sample data—no config needed.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="shrink-0 rounded-lg border border-[var(--editor-border)] bg-[var(--panel-bg)] px-3 py-2 text-sm font-medium text-[var(--text)] hover:bg-[var(--editor-border)] transition-colors"
+          title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+        >
+          {theme === "dark" ? "☀️ Light" : "🌙 Dark"}
+        </button>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Left: Code + Dummy data */}
+        {/* Left: Code + Dummy data — explicit height so CodeMirror shows scrollbar */}
         <div className="space-y-4 min-h-0 flex flex-col">
-          <div className="flex flex-col flex-1 min-h-0 h-[calc(100vh-7rem)]">
+          <div className="flex flex-col flex-1 min-h-0" style={{ height: "calc(100vh - 7rem)" }}>
             <label className="block text-sm font-medium text-[var(--text-muted)] mb-1 shrink-0">
               Template code
             </label>
-            <div className="flex-1 min-h-0 overflow-auto flex flex-col">
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden" style={{ minHeight: 200 }}>
               <CodeEditor
                 value={template}
                 onChange={setTemplate}
                 language="html"
-                height="100%"
+                height="65vh"
+                theme={theme}
                 placeholder="HTML with {{variable}} or ${'${expr}'} placeholders..."
                 onSelectionChange={setHighlightFromCode}
                 onSelectionRange={setSelectionRange}
-                className="flex-1 min-h-0 h-full"
+                className="flex-1 min-h-0 shrink-0"
               highlightRange={
                 selectedNode
                   ? { from: selectedNode.startOffset, to: selectedNode.endOffset }
@@ -185,20 +199,25 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Right: Preview + Inspector + Output */}
+        {/* Right: Preview + Inspector + Output — max height so preview scrolls */}
         <div className="space-y-4 flex flex-col min-h-0">
-          <div className="flex flex-col flex-1 min-h-[36rem]">
-            <label className="block text-sm font-medium text-[var(--text-muted)] mb-1">
+          <div
+            className="flex flex-col flex-1 min-h-[28rem] overflow-auto"
+            style={{ maxHeight: "calc(100vh - 7rem)" }}
+          >
+            <label className="block text-sm font-medium text-[var(--text-muted)] mb-1 shrink-0">
               Preview (click any element to highlight it in the code; select code on the left to show where it is — two-way sync)
             </label>
-            <PreviewPane
+            <div className="flex-1 min-h-[420px] flex flex-col overflow-hidden" style={{ height: "65vh", minHeight: 420 }}>
+              <PreviewPane
               html={previewHtml}
               selectedNodeId={selectedNodeId}
               onSelectNode={setSelectedNodeId}
               indexToNodeId={indexToNodeId}
               highlightPreviewIndex={highlightPreviewIndex}
               highlightFromCode={highlightFromCode}
-            />
+              />
+            </div>
           </div>
 
           {/* Inspector */}
@@ -260,18 +279,22 @@ export default function Home() {
               Mirrors your current template (including any text you add or delete). Inspector “Remove” and “Apply padding” are applied. Spaces preserved.
             </p>
             {output !== null ? (
-              <div className="relative">
+              <div className="relative flex flex-col">
+                <p className="text-xs text-[var(--text-muted)] mb-1">
+                  Full template ({output.length} chars) — scroll to see all.
+                </p>
                 <CodeEditor
                   value={output}
                   onChange={() => {}}
                   language="html"
-                  height="16rem"
+                  height="400px"
                   readOnly
+                  theme={theme}
                 />
                 <button
                   type="button"
                   onClick={() => navigator.clipboard.writeText(output)}
-                  className="absolute top-2 right-2 z-10 rounded bg-[var(--panel-bg)] border border-[var(--editor-border)] text-[var(--text)] px-2 py-1 text-xs hover:bg-[var(--editor-border)]"
+                  className="absolute top-9 right-2 z-10 rounded bg-[var(--panel-bg)] border border-[var(--editor-border)] text-[var(--text)] px-2 py-1 text-xs hover:bg-[var(--editor-border)]"
                 >
                   Copy
                 </button>

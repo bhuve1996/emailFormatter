@@ -161,7 +161,8 @@ function replaceImagesWithPlaceholder(doc: Document): void {
     const align = img.getAttribute("align");
     const wrapper = doc.createElement("span");
     wrapper.setAttribute("data-image-placeholder", "1");
-    wrapper.setAttribute("data-node-id", img.getAttribute("data-node-id") ?? "");
+    const nodeId = img.getAttribute("data-node-id");
+    if (nodeId != null && nodeId !== "") wrapper.setAttribute("data-node-id", nodeId);
     wrapper.setAttribute("data-tag-name", "img");
     wrapper.style.display = "inline-flex";
     wrapper.style.alignItems = "center";
@@ -219,7 +220,9 @@ export function PreviewPane({
     body.style.padding = "8px";
     body.style.fontFamily = "system-ui, sans-serif";
     doc.documentElement.style.height = "100%";
+    doc.documentElement.style.overflowY = "auto";
     body.style.minHeight = "100%";
+    body.style.overflowY = "auto";
 
     // Replace images with a same-size placeholder icon (preserves layout; avoids broken external URLs)
     replaceImagesWithPlaceholder(doc);
@@ -331,7 +334,7 @@ export function PreviewPane({
   }, [html, highlightPreviewIndex, highlightFromCode]);
 
   return (
-    <div className="h-full min-h-[520px] rounded-lg border border-[var(--editor-border)] bg-white overflow-auto flex-1 flex flex-col min-h-0">
+    <div className="h-full min-h-[520px] rounded-lg border border-[var(--editor-border)] bg-[var(--panel-bg)] overflow-auto flex-1 flex flex-col min-h-0">
       <iframe
         ref={iframeRef}
         title="Preview"
